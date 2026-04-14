@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import multiprocessing as mp
+import os
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from gen_keys_py.config import SUBJECTS_PARAMS
 # ENV
 CERTS_PATH = Path('~/.android-certs').expanduser()
 # CERTS_PATH = Path('.android-certs')  # for testing only
+KEYS_DIR = Path('keys')
 RSA_PLATFORM_KEY_SIZE = 2048
 RSA_APEX_KEY_SIZE = 4096
 
@@ -34,8 +36,8 @@ def extract_public_key(key_apex_path: Path, pubkey_output_path: Path):
 
 def generate_platform_key(cert: str):
     key_platform = CERTS_PATH / f'{cert}.pem'
-    x509_file = Path(f'{cert}.x509.pem')
-    pk8_file = Path(f'{cert}.pk8')
+    x509_file = KEYS_DIR / f'{cert}.x509.pem'
+    pk8_file = KEYS_DIR / f'{cert}.pk8'
 
     key = None
 
@@ -91,11 +93,11 @@ def generate_platform_key(cert: str):
 
 
 def generate_apex_key(apex: str):
-    key_apex = Path(f'{apex}.pem')
-    x509_file = Path(f'{apex}.certificate.override.x509.pem')
-    pk8_file = Path(f'{apex}.certificate.override.pk8')
-    avbpubkey_file = Path(f'{apex}.avbpubkey')
-    pubkey_file = Path(f'{apex}.pubkey')
+    key_apex = KEYS_DIR / f'{apex}.pem'
+    x509_file = KEYS_DIR / f'{apex}.certificate.override.x509.pem'
+    pk8_file = KEYS_DIR / f'{apex}.certificate.override.pk8'
+    avbpubkey_file = KEYS_DIR / f'{apex}.avbpubkey'
+    pubkey_file = KEYS_DIR / f'{apex}.pubkey'
 
     key = None
 
@@ -159,6 +161,7 @@ def generate_apex_key(apex: str):
 def generate_keys():
     workers = mp.cpu_count()
     CERTS_PATH.mkdir(parents=True, exist_ok=True)
+    KEYS_DIR.mkdir(parents=True, exist_ok=True)
 
     with ProcessPoolExecutor(max_workers=workers) as executor:
         platform_futures = [
@@ -175,11 +178,26 @@ def generate_keys():
     return platform_results, apex_results
 
 
+def generate_symlinks():
+    # nfc
+    nfc_x509 = KEYS_DIR / 'nfc.x509.pem'
+    nfc_pk8 = KEYS_DIR / 'nfc.pk8'
+    if not nfc_x509.exists():
+        os.symlink('com.android.nfcservices.certificate.override.x509.pem', nfc_x509)
+    if not nfc_pk8.exists():
+        os.symlink('com.android.nfcservices.certificate.override.pk8', nfc_pk8)
+
+    # signed (recovery)
+    signed_x509 = KEYS_DIR / 'signed.x509.pem'
+    if not signed_x509.exists():
+        os.symlink('releasekey.x509.pem', signed_x509)
+
+
 def generate_android_bp():
     cert_blocks = '\n\n'.join(
         f'android_app_certificate {{\n'
         f'    name: "{apex}.certificate.override",\n'
-        f'    certificate: "{apex}.certificate.override",\n'
+        f'    certificate: "keys/{apex}.certificate.override",\n'
         f'}}'
         for apex in keys.apex_keys
     )
@@ -232,6 +250,7 @@ def generate_keys_mk():
 
 def main():
     generate_keys()
+    generate_symlinks()
     generate_android_bp()
     generate_keys_mk()
 

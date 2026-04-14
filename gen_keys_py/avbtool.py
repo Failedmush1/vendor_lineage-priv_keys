@@ -1,1 +1,1 @@
-../../../../external/avb/avbtool.py
+../../../external/avb/avbtool.py
